@@ -1,0 +1,1968 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Cotizador DTF/Bordado" />
+  <link id="pwa-manifest-link" rel="manifest" href="" />
+  <title>Cotizador Pro — Taller Bordado & DTF</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- html2canvas para exportar imagen PNG de la cotización -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- html2pdf.js para descarga directa de archivo PDF sin depender de window.print() -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+    }
+
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      opacity: 1;
+    }
+
+    /* Patrón sutil de cuadrícula para simular la lámina DTF */
+    .dtf-sheet-grid {
+      background-color: #f8fafc;
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 10px 10px;
+    }
+
+    /* Estilos de impresión: oculta toda la UI interna y deja solo la tarjeta del cliente */
+    @media print {
+      body {
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      #print-area-wrapper {
+        position: static !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+      }
+      #client-quote-card {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 16px !important;
+        width: 100% !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-16">
+
+  <!-- Notificación Toast Flotante (Reemplaza alert()) -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none no-print"></div>
+
+  <!-- Modal Configuración del Taller + Logo -->
+  <div id="workshop-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4 no-print overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 my-8">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2 text-indigo-700 font-bold text-lg">
+          <i data-lucide="store" class="w-5 h-5"></i>
+          <span>Identidad y Datos de tu Taller</span>
+        </div>
+        <button onclick="toggleWorkshopModal(false)" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-500 mb-4">Personaliza tu logo y datos comerciales para que aparezcan en cada cotización descargable.</p>
+      
+      <div class="space-y-3.5">
+        <!-- Subida de Logo del Taller -->
+        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex items-center gap-4">
+          <div class="w-16 h-16 rounded-xl bg-white border border-slate-300 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
+            <img id="cfg-logo-preview" src="" alt="Logo Taller" class="w-full h-full object-contain hidden">
+            <i id="cfg-logo-placeholder" data-lucide="image-plus" class="w-6 h-6 text-slate-400"></i>
+          </div>
+          <div class="flex-1 space-y-1.5">
+            <span class="block text-xs font-bold text-slate-800">Logo de tu Empresa / Taller</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer transition inline-flex items-center gap-1.5">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i> Subir Logo
+                <input type="file" id="cfg-logo-input" accept="image/*" onchange="handleWorkshopLogoUpload(event)" class="hidden">
+              </label>
+              <button type="button" id="cfg-logo-remove" onclick="removeWorkshopLogo()" class="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold hidden transition">
+                Quitar
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-400">Se guarda automáticamente en tu navegador (PNG/JPG).</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Nombre del Taller / Marca</label>
+            <input type="text" id="cfg-workshop-name" placeholder="Ej. Taller Punto & Trazo" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">RUT Empresa (Opcional)</label>
+            <input type="text" id="cfg-workshop-rut" placeholder="Ej. 76.123.456-7" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Teléfono / WhatsApp</label>
+            <input type="text" id="cfg-workshop-phone" placeholder="Ej. +56 9 1234 5678" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Instagram / Correo / Web</label>
+            <input type="text" id="cfg-workshop-social" placeholder="Ej. @tallertestil.cl" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Dirección / Comuna (Opcional)</label>
+          <input type="text" id="cfg-workshop-address" placeholder="Ej. Quilpué, Región de Valparaíso" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Condiciones comerciales (Pie de página)</label>
+          <textarea id="cfg-workshop-terms" rows="2" placeholder="Ej. Cotización válida por 15 días. 50% abono para iniciar producción." class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+        </div>
+      </div>
+
+      <div class="mt-6 flex justify-end gap-2">
+        <button onclick="toggleWorkshopModal(false)" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Cancelar</button>
+        <button onclick="saveWorkshopConfig()" class="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm flex items-center gap-1.5">
+          <i data-lucide="save" class="w-4 h-4"></i> Guardar Datos
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Barra Superior (Header) -->
+  <header class="bg-slate-900 text-white shadow-md sticky top-0 z-30 no-print">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <!-- Miniatura de Logo en Header si está configurado -->
+        <div id="header-logo-box" class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-inner overflow-hidden shrink-0">
+          <img id="header-logo-img" src="" alt="Logo" class="w-full h-full object-contain bg-white p-0.5 hidden">
+          <i id="header-logo-icon" data-lucide="scissors" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <h1 id="header-workshop-title" class="font-bold text-base sm:text-lg leading-tight tracking-tight">Cotizador Taller Bordado & DTF</h1>
+          <p class="text-[11px] text-slate-400">Cálculo de costos reales & Presupuesto cliente</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <button id="btn-install-pwa" onclick="installPwaApp()" class="hidden px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm transition">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span>Instalar App</span>
+        </button>
+        <button onclick="toggleWorkshopModal(true)" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium flex items-center gap-1.5 border border-slate-700 transition">
+          <i data-lucide="image" class="w-4 h-4 text-indigo-400"></i>
+          <span>Mi Taller & Logo</span>
+        </button>
+        <button onclick="saveDefaultMaterials()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium flex items-center gap-1.5 border border-slate-700 transition" title="Guarda tus precios base de hilos, entretela y pliegos DTF">
+          <i data-lucide="bookmark-check" class="w-4 h-4 text-emerald-400"></i>
+          <span class="hidden sm:inline">Guardar Precios Base</span>
+          <span class="sm:hidden">Base</span>
+        </button>
+        <button onclick="startNewQuote()" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-sm transition">
+          <i data-lucide="file-plus-2" class="w-4 h-4"></i>
+          <span>Nueva Cotización</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenido Principal -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+      <!-- COLUMNA IZQUIERDA: FORMULARIOS DE CÁLCULO (7 cols en desktop) -->
+      <div class="lg:col-span-7 space-y-6 no-print">
+
+        <!-- 1. DATOS GENERALES DE LA COTIZACIÓN -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+              <span class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-extrabold">1</span>
+              Datos de la Cotización
+            </h2>
+            <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">Correlativo Automático</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            <div class="sm:col-span-4">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">N° Cotización</label>
+              <input type="text" id="quote-number" value="COT-0001" oninput="updateAll()" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-indigo-700 bg-indigo-50/40 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div class="sm:col-span-5">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre Cotización / Cliente</label>
+              <input type="text" id="quote-client" placeholder="Ej. Uniformes Empresa Constructora" oninput="updateAll()" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div class="sm:col-span-3">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha</label>
+              <input type="date" id="quote-date" onchange="updateAll()" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. PRENDAS / PRODUCTOS BASE -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                <span class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-extrabold">2</span>
+                Prendas o Artículos a Personalizar
+              </h2>
+              <p class="text-xs text-slate-500 mt-0.5">Agrega subtítulos por tipo de prenda (si el cliente trae las prendas, deja el costo en $0).</p>
+            </div>
+            <button onclick="addGarmentRow()" class="px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1.5 transition">
+              <i data-lucide="plus-circle" class="w-4 h-4"></i> Agregar Línea
+            </button>
+          </div>
+
+          <div id="garments-list" class="space-y-3">
+            <!-- Las filas de prendas se renderizan dinámicamente con JS -->
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span class="text-slate-500 font-medium">Total unidades en este pedido: <strong id="total-units-badge" class="text-slate-900 text-sm">0 unid.</strong></span>
+            <span class="text-slate-500 font-medium">Costo base prendas: <strong id="total-garments-cost-badge" class="text-slate-900 text-sm">$0</strong></span>
+          </div>
+        </section>
+
+        <!-- 3. SELECTOR DE TÉCNICA DE PERSONALIZACIÓN -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+          <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2 mb-3">
+            <span class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-extrabold">3</span>
+            Tipo de Servicio a Cotizar
+          </h2>
+
+          <div class="grid grid-cols-3 gap-2.5 p-1.5 bg-slate-100 rounded-2xl">
+            <button type="button" id="btn-mode-embroidery" onclick="setServiceMode('embroidery')" class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition shadow-sm bg-white text-indigo-700">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+              <span>Bordado</span>
+            </button>
+            <button type="button" id="btn-mode-dtf" onclick="setServiceMode('dtf')" class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition text-slate-600 hover:text-slate-900">
+              <i data-lucide="layers" class="w-4 h-4"></i>
+              <span>DTF</span>
+            </button>
+            <button type="button" id="btn-mode-both" onclick="setServiceMode('both')" class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition text-slate-600 hover:text-slate-900">
+              <i data-lucide="combine" class="w-4 h-4"></i>
+              <span>Ambos (Mixto)</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- MÓDULO A: BORDADO INDUSTRIAL -->
+        <section id="embroidery-section" class="bg-white rounded-2xl shadow-sm border-2 border-indigo-100 p-5 space-y-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div class="flex items-center gap-2">
+              <div class="p-2 rounded-xl bg-indigo-600 text-white">
+                <i data-lucide="sparkles" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-slate-900 text-base">Cálculo de Bordado</h3>
+                <p class="text-xs text-slate-500">Puntadas, hilos, entretela, matriz y tiempo de máquina</p>
+              </div>
+            </div>
+
+            <!-- Selector Prenda Plana vs Gorras -->
+            <div class="flex items-center bg-slate-100 p-1 rounded-xl">
+              <button type="button" id="emb-type-flat" onclick="setEmbroideryTarget('flat')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-sm flex items-center gap-1.5 transition">
+                <i data-lucide="shirt" class="w-3.5 h-3.5"></i> Prendas
+              </button>
+              <button type="button" id="emb-type-cap" onclick="setEmbroideryTarget('cap')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 flex items-center gap-1.5 transition">
+                <i data-lucide="hard-hat" class="w-3.5 h-3.5"></i> Gorras
+              </button>
+            </div>
+          </div>
+
+          <!-- Subida de Imagen de Referencia para Bordado -->
+          <div class="bg-indigo-50/40 rounded-xl p-3.5 border border-indigo-100 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-14 h-14 rounded-xl bg-white border border-indigo-200 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                <img id="emb-art-preview" src="" alt="Muestra Bordado" class="w-full h-full object-contain hidden">
+                <i id="emb-art-placeholder" data-lucide="image" class="w-5 h-5 text-indigo-300"></i>
+              </div>
+              <div>
+                <span class="block text-xs font-bold text-slate-800">Imagen de Referencia (Bordado)</span>
+                <p class="text-[11px] text-slate-500">Sube una foto o boceto desde tu teléfono o PC para referencia.</p>
+                <label class="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-700 cursor-pointer">
+                  <input type="checkbox" id="emb-show-in-quote" checked onchange="updateAll()" class="rounded text-indigo-600">
+                  <span>Mostrar muestra en la cotización del cliente</span>
+                </label>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer transition flex items-center gap-1.5 shadow-xs">
+                <i data-lucide="camera" class="w-4 h-4"></i>
+                <span>Subir Imagen</span>
+                <input type="file" id="emb-art-input" accept="image/*" onchange="handleDesignImageUpload(event, 'emb')" class="hidden">
+              </label>
+              <button type="button" id="emb-art-remove" onclick="removeDesignImage('emb')" class="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 hidden" title="Quitar imagen">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Parámetros de Puntadas y Tiempo de Máquina -->
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-200/70">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Producción y Velocidad de Máquina</span>
+              <span id="emb-target-hint" class="text-[11px] font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">Modo Prenda Plana</span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Puntadas Diseño</label>
+                <input type="number" id="emb-stitches" value="8500" min="100" step="100" oninput="updateAll()" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Velocidad (PPM)</label>
+                <input type="number" id="emb-ppm" value="750" min="200" max="1500" step="50" oninput="updateAll()" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Montaje/Cambio (min/u)</label>
+                <input type="number" id="emb-setup-min" value="2" min="0" step="0.5" oninput="updateAll()" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Desgaste Máq. ($/hora)</label>
+                <input type="number" id="emb-machine-hour-cost" value="1500" min="0" step="100" oninput="updateAll()" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none">
+              </div>
+            </div>
+
+            <!-- Indicador de Tiempo Calculado -->
+            <div class="mt-3 pt-3 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div class="flex items-center gap-2 text-slate-700">
+                <i data-lucide="clock" class="w-4 h-4 text-indigo-600"></i>
+                <span>Tiempo por prenda: <strong id="emb-time-unit" class="text-slate-900">13.3 min</strong></span>
+              </div>
+              <div class="flex items-center gap-2 text-indigo-800 bg-indigo-100/70 px-3 py-1 rounded-lg font-bold">
+                <i data-lucide="timer" class="w-4 h-4"></i>
+                <span>Tiempo Total Lote: <span id="emb-time-total">0 hrs 0 min</span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Insumos: Hilo Superior, Hilo Bobina y Entretela -->
+          <div class="space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700">Insumos de Bordado (Hilos y Entretela)</h4>
+            
+            <!-- Hilo Superior -->
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end bg-slate-50/70 p-3 rounded-xl border border-slate-200/60">
+              <div class="sm:col-span-4">
+                <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> Hilo Superior
+                </span>
+                <p class="text-[11px] text-slate-500">Consumo est.: ~5m c/1.000 puntadas</p>
+              </div>
+              <div class="sm:col-span-3">
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Precio Cono ($)</label>
+                <input type="number" id="emb-top-thread-price" value="3500" min="0" step="100" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+              </div>
+              <div class="sm:col-span-3">
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Metros Cono (m)</label>
+                <input type="number" id="emb-top-thread-meters" value="4000" min="1" step="100" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+              </div>
+              <div class="sm:col-span-2 text-right">
+                <span class="block text-[10px] text-slate-400">Costo lote</span>
+                <strong id="emb-top-thread-cost" class="text-xs font-bold text-slate-800">$0</strong>
+              </div>
+            </div>
+
+            <!-- Hilo de Bobina -->
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end bg-slate-50/70 p-3 rounded-xl border border-slate-200/60">
+              <div class="sm:col-span-4">
+                <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span> Hilo de Bobina
+                </span>
+                <p class="text-[11px] text-slate-500">Consumo est.: ~2.5m c/1.000 puntadas</p>
+              </div>
+              <div class="sm:col-span-3">
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Precio Cono ($)</label>
+                <input type="number" id="emb-bobbin-price" value="6500" min="0" step="100" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+              </div>
+              <div class="sm:col-span-3">
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Metros Cono (m)</label>
+                <input type="number" id="emb-bobbin-meters" value="30000" min="1" step="500" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+              </div>
+              <div class="sm:col-span-2 text-right">
+                <span class="block text-[10px] text-slate-400">Costo lote</span>
+                <strong id="emb-bobbin-cost" class="text-xs font-bold text-slate-800">$0</strong>
+              </div>
+            </div>
+
+            <!-- Entretela / Pelón -->
+            <div class="bg-slate-50/70 p-3 rounded-xl border border-slate-200/60 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Entretela / Pelón
+                </span>
+                <span class="text-xs text-slate-500">Costo lote: <strong id="emb-backing-cost" class="text-slate-800">$0</strong></span>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Precio Rollo ($)</label>
+                  <input type="number" id="emb-backing-price" value="18000" min="0" step="500" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Ancho Rollo (cm)</label>
+                  <input type="number" id="emb-backing-width" value="100" min="1" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Largo Rollo (m)</label>
+                  <input type="number" id="emb-backing-length" value="50" min="1" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Corte Ancho (cm)</label>
+                  <input type="number" id="emb-backing-cut-w" value="15" min="1" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Corte Alto (cm)</label>
+                  <input type="number" id="emb-backing-cut-h" value="15" min="1" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Matriz / Ponchado y Extras (Chip NFC / Otros) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+            <div class="bg-indigo-50/40 p-3.5 rounded-xl border border-indigo-100">
+              <label class="block text-xs font-bold text-slate-800 mb-1">Matriz / Ponchado (Costo único)</label>
+              <p class="text-[11px] text-slate-500 mb-2">Si el cliente ya tiene matriz, déjalo en $0.</p>
+              <div class="relative">
+                <span class="absolute left-3 top-2 text-slate-400 text-sm">$</span>
+                <input type="number" id="emb-digitizing-cost" value="8000" min="0" step="500" oninput="updateAll()" class="w-full pl-7 pr-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+              </div>
+            </div>
+
+            <div class="bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-100 space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
+                  <input type="checkbox" id="emb-nfc-enabled" onchange="updateAll()" class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500">
+                  <span>Incluir Chip NFC por unidad</span>
+                </label>
+                <span class="text-[11px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Extra</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[10px] font-semibold text-slate-600 mb-0.5">Costo Chip NFC ($/u)</label>
+                  <input type="number" id="emb-nfc-price" value="1200" min="0" step="100" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+                </div>
+                <div>
+                  <label class="block text-[10px] font-semibold text-slate-600 mb-0.5">Otros Adicionales ($/u)</label>
+                  <input type="number" id="emb-other-extra" value="0" min="0" step="100" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm">
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MÓDULO B: ESTAMPADO DTF -->
+        <section id="dtf-section" class="bg-white rounded-2xl shadow-sm border-2 border-sky-100 p-5 space-y-5 hidden">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div class="flex items-center gap-2">
+              <div class="p-2 rounded-xl bg-sky-600 text-white">
+                <i data-lucide="layers" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-slate-900 text-base">Cálculo de Estampado DTF</h3>
+                <p class="text-xs text-slate-500">Rendimiento multi-pliego en tiempo real, vista de arte y planchado</p>
+              </div>
+            </div>
+            <span class="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-full border border-sky-200">
+              <span id="dtf-sheets-needed">1</span> pliego(s) necesario(s)
+            </span>
+          </div>
+
+          <!-- Subida de Imagen del Diseño DTF (Se renderiza dentro del esquema de pliego) -->
+          <div class="bg-sky-50/50 rounded-xl p-3.5 border border-sky-200/70 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-14 h-14 rounded-xl bg-white border border-sky-200 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                <img id="dtf-art-preview" src="" alt="Arte DTF" class="w-full h-full object-contain hidden">
+                <i id="dtf-art-placeholder" data-lucide="image" class="w-5 h-5 text-sky-300"></i>
+              </div>
+              <div>
+                <span class="block text-xs font-bold text-slate-800">Imagen / Arte del Diseño DTF</span>
+                <p class="text-[11px] text-slate-500">Se mostrará acomodado dentro del esquema visual del pliego.</p>
+                <label class="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 cursor-pointer">
+                  <input type="checkbox" id="dtf-show-in-quote" checked onchange="updateAll()" class="rounded text-sky-600">
+                  <span>Mostrar muestra en la cotización del cliente</span>
+                </label>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold cursor-pointer transition flex items-center gap-1.5 shadow-xs">
+                <i data-lucide="camera" class="w-4 h-4"></i>
+                <span>Subir Arte</span>
+                <input type="file" id="dtf-art-input" accept="image/*" onchange="handleDesignImageUpload(event, 'dtf')" class="hidden">
+              </label>
+              <button type="button" id="dtf-art-remove" onclick="removeDesignImage('dtf')" class="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 hidden" title="Quitar imagen">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Datos del Pliego y del Diseño -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Pliego del Proveedor -->
+            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2.5">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-700 block">1. Pliego / Metro del Proveedor</span>
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Ancho (cm)</label>
+                  <input type="number" id="dtf-sheet-w" value="58" min="10" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Largo (cm)</label>
+                  <input type="number" id="dtf-sheet-h" value="100" min="10" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Precio ($)</label>
+                  <input type="number" id="dtf-sheet-price" value="12000" min="0" step="500" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+                </div>
+              </div>
+            </div>
+
+            <!-- Medidas del Diseño -->
+            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-700">2. Medidas del Diseño</span>
+                <label class="flex items-center gap-1 text-[10px] font-semibold text-sky-700 cursor-pointer">
+                  <input type="checkbox" id="dtf-allow-rotate" checked onchange="updateAll()" class="rounded text-sky-600">
+                  <span>Auto-rotar 90°</span>
+                </label>
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Ancho (cm)</label>
+                  <input type="number" id="dtf-logo-w" value="10" min="1" step="0.5" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Alto (cm)</label>
+                  <input type="number" id="dtf-logo-h" value="10" min="1" step="0.5" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Separación (cm)</label>
+                  <input type="number" id="dtf-gap" value="0.5" min="0" step="0.1" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Resultado de Aprovechamiento + Visualizador Multi-Pliego Desplegable -->
+          <div class="bg-sky-50/70 rounded-xl p-4 border border-sky-200/80">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="space-y-0.5">
+                <div class="text-xs text-slate-600">
+                  Capacidad máxima: <strong id="dtf-per-sheet" class="text-sky-800 text-base">0 diseños</strong> / pliego
+                  <span id="dtf-orientation-tag" class="ml-1.5 text-[11px] bg-white px-2 py-0.5 rounded border border-sky-200 text-sky-700 font-medium">Orientación normal</span>
+                </div>
+                <p class="text-xs text-slate-500">
+                  Costo unitario por diseño: <strong id="dtf-unit-logo-cost" class="text-slate-800">$0</strong> • Total requerido: <strong id="dtf-sheets-summary" class="text-slate-800">0 pliegos</strong> para <strong id="dtf-total-designs-label" class="text-slate-800">0</strong> unidades
+                </p>
+              </div>
+
+              <button type="button" onclick="toggleDtfPreview()" id="btn-toggle-dtf-diagram" class="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+                <span id="btn-toggle-dtf-text">Ver esquema de pliegos</span>
+              </button>
+            </div>
+
+            <!-- Contenedor Desplegable Multi-Pliego (Se actualiza en tiempo real al cambiar cantidades o tamaños) -->
+            <div id="dtf-diagram-wrapper" class="hidden mt-4 pt-4 border-t border-sky-200/80 space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="text-xs font-bold text-slate-700">
+                  Distribución real de <span id="dtf-placed-count-info" class="text-sky-700">0 diseños</span> en <span id="dtf-sheets-count-info" class="text-sky-700">1 pliego</span> (<span id="dtf-dim-label">58×100 cm</span>)
+                </span>
+                <span class="text-[11px] text-slate-500">Actualización automática en vivo</span>
+              </div>
+
+              <!-- Grid dinámico de Pliegos (Pliego 1, Pliego 2, Pliego 3...) -->
+              <div id="dtf-multi-sheets-container" class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[460px] overflow-y-auto p-1">
+                <!-- Se renderiza dinámicamente cada pliego requerido -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Planchado / Prensado y Diseño Gráfico DTF -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 mb-1">Segundos Planchado (por prenda)</label>
+              <input type="number" id="dtf-press-seconds" value="25" min="5" step="5" oninput="updateAll()" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-semibold">
+              <p class="text-[10px] text-slate-400 mt-0.5">Acomodo + prensado + segundo sellado</p>
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 mb-1">Costo Diseño / Vectorizado ($)</label>
+              <input type="number" id="dtf-design-cost" value="0" min="0" step="500" oninput="updateAll()" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-semibold">
+              <p class="text-[10px] text-slate-400 mt-0.5">Costo único si debes armar el archivo</p>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 flex flex-col justify-center">
+              <span class="text-[11px] text-slate-500">Tiempo total planchado:</span>
+              <strong id="dtf-press-total-time" class="text-sm font-bold text-sky-800">0 min</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. MANO DE OBRA Y ENVÍO -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 space-y-4">
+          <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-extrabold">4</span>
+            Mano de Obra y Envío
+          </h2>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Mano de obra -->
+            <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
+              <div class="flex items-center justify-between">
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
+                  <input type="checkbox" id="labor-enabled" checked onchange="updateAll()" class="w-4 h-4 rounded text-indigo-600">
+                  <span>Pago Mano de Obra / Operador</span>
+                </label>
+              </div>
+
+              <div id="labor-inputs" class="space-y-2.5">
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Modalidad</label>
+                    <select id="labor-mode" onchange="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold">
+                      <option value="hourly">Por hora producida</option>
+                      <option value="fixed">Monto fijo por pedido</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label id="labor-rate-label" class="block text-[11px] font-semibold text-slate-600 mb-1">Valor Hora ($)</label>
+                    <input type="number" id="labor-rate" value="4500" min="0" step="500" oninput="updateAll()" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+                  </div>
+                </div>
+                <div class="text-[11px] text-slate-500 flex justify-between pt-1 border-t border-slate-200/70">
+                  <span>Tiempo prod. total: <strong id="total-prod-hours">0.0 hrs</strong></span>
+                  <span>Costo M.O.: <strong id="labor-total-cost" class="text-slate-800">$0</strong></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Envío / Despacho -->
+            <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
+              <div class="flex items-center justify-between">
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
+                  <input type="checkbox" id="shipping-enabled" onchange="updateAll()" class="w-4 h-4 rounded text-indigo-600">
+                  <span>Incluir Envío / Despacho</span>
+                </label>
+                <i data-lucide="truck" class="w-4 h-4 text-slate-400"></i>
+              </div>
+
+              <div id="shipping-inputs" class="space-y-2.5">
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 mb-1">Costo del Envío ($ CLP)</label>
+                  <input type="number" id="shipping-cost" value="4500" min="0" step="500" oninput="updateAll()" class="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold">
+                </div>
+                <p class="text-[11px] text-slate-500">Se sumará como ítem de despacho en la cotización.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- COLUMNA DERECHA: PANEL PRIVADO TALLER + VISTA CLIENTE DESCARGABLE (5 cols en desktop) -->
+      <div class="lg:col-span-5 space-y-6 lg:sticky lg:top-20">
+
+        <!-- PANEL PRIVADO: SOLO PARA TI (OCULTO AL IMPRIMIR Y EN DESCARGA CLIENTE) -->
+        <section class="bg-slate-900 text-white rounded-2xl shadow-lg p-5 border border-slate-800 no-print">
+          <div class="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+                <i data-lucide="lock" class="w-4 h-4"></i>
+              </span>
+              <div>
+                <h2 class="text-sm font-bold text-white">Panel Interno del Taller</h2>
+                <p class="text-[11px] text-slate-400">Solo visible para ti (no sale en el PDF/Imagen)</p>
+              </div>
+            </div>
+            <span class="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              Privado
+            </span>
+          </div>
+
+          <!-- Control de Porcentaje de Ganancia -->
+          <div class="bg-slate-800/80 rounded-xl p-3.5 mb-4 border border-slate-700/80">
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-xs font-bold text-slate-200">Porcentaje de Ganancia (%)</label>
+              <div class="flex items-center gap-1">
+                <input type="number" id="profit-percent" value="45" min="0" max="500" step="5" oninput="syncProfitSlider(this.value)" class="w-16 px-2 py-1 rounded-lg bg-slate-900 border border-slate-600 text-right font-extrabold text-emerald-400 text-sm">
+                <span class="text-sm font-bold text-emerald-400">%</span>
+              </div>
+            </div>
+            <input type="range" id="profit-slider" value="45" min="0" max="200" step="5" oninput="syncProfitInput(this.value)" class="w-full accent-emerald-500 cursor-pointer">
+            
+            <div class="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-700/70 text-[11px]">
+              <span class="text-slate-400">Impuesto en documento cliente:</span>
+              <select id="tax-mode" onchange="updateAll()" class="bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-2 py-1 text-xs font-semibold outline-none">
+                <option value="none">Precio Final (Sin desglose IVA)</option>
+                <option value="plus_iva">Precio Neto + 19% IVA</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Desglose Rápido de Costos Reales -->
+          <div class="space-y-1.5 text-xs mb-4">
+            <div class="flex justify-between text-slate-400">
+              <span>Prendas base:</span>
+              <span id="priv-cost-garments" class="text-slate-200 font-medium">$0</span>
+            </div>
+            <div id="priv-row-emb" class="flex justify-between text-slate-400">
+              <span>Insumos Bordado + Matriz + Máq.:</span>
+              <span id="priv-cost-emb" class="text-slate-200 font-medium">$0</span>
+            </div>
+            <div id="priv-row-dtf" class="flex justify-between text-slate-400 hidden">
+              <span>Pliegos DTF + Diseño:</span>
+              <span id="priv-cost-dtf" class="text-slate-200 font-medium">$0</span>
+            </div>
+            <div id="priv-row-extras" class="flex justify-between text-slate-400 hidden">
+              <span>Chips NFC / Extras:</span>
+              <span id="priv-cost-extras" class="text-slate-200 font-medium">$0</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Mano de obra + Envío:</span>
+              <span id="priv-cost-labor-ship" class="text-slate-200 font-medium">$0</span>
+            </div>
+          </div>
+
+          <!-- Tarjetas de Resultados Financieros -->
+          <div class="grid grid-cols-2 gap-3 pt-3 border-t border-slate-800">
+            <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/60">
+              <span class="block text-[11px] text-slate-400">Costo Real Producción</span>
+              <strong id="priv-total-cost" class="text-base sm:text-lg font-extrabold text-rose-400">$0</strong>
+            </div>
+            <div class="bg-emerald-950/60 p-3 rounded-xl border border-emerald-700/50">
+              <span class="block text-[11px] text-emerald-300">Tu Ganancia Neta</span>
+              <strong id="priv-net-profit" class="text-base sm:text-lg font-extrabold text-emerald-400">$0</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- BOTONES DE DESCARGA Y EXPORTACIÓN PARA EL CLIENTE -->
+        <div class="flex flex-wrap items-center justify-between gap-2 no-print">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+            <i data-lucide="file-check-2" class="w-4 h-4 text-indigo-600"></i>
+            Vista Previa Cliente
+          </span>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="copyWhatsAppQuote()" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition">
+              <i data-lucide="message-circle" class="w-4 h-4"></i> WhatsApp
+            </button>
+            <button onclick="downloadQuoteImage()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition">
+              <i data-lucide="image" class="w-4 h-4"></i> Imagen PNG
+            </button>
+            <button onclick="downloadQuotePDF()" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition">
+              <i data-lucide="file-down" class="w-4 h-4"></i> Descargar PDF
+            </button>
+            <button onclick="window.print()" class="px-2.5 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold flex items-center gap-1 shadow-sm transition" title="Imprimir documento">
+              <i data-lucide="printer" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- DOCUMENTO LIMPIO PARA EL CLIENTE (Este bloque es el que se imprime/descarga) -->
+        <div id="print-area-wrapper">
+          <div id="client-quote-card" class="bg-white rounded-2xl shadow-md border border-slate-200 p-6 space-y-5">
+            
+            <!-- Encabezado del Documento Cliente con Logo Personalizado -->
+            <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+              <div class="flex items-center gap-3">
+                <img id="doc-workshop-logo" src="" alt="Logo Empresa" class="w-14 h-14 object-contain rounded-xl border border-slate-100 bg-white p-1 hidden shrink-0">
+                <div>
+                  <h3 id="doc-workshop-name" class="font-extrabold text-lg text-slate-900 tracking-tight leading-snug">Taller Bordado & DTF</h3>
+                  <p id="doc-workshop-rut" class="text-[11px] font-semibold text-slate-500 hidden"></p>
+                  <p id="doc-workshop-contact" class="text-xs text-slate-500 mt-0.5">Personalización Textil Profesional</p>
+                  <p id="doc-workshop-address" class="text-[11px] text-slate-400 hidden"></p>
+                </div>
+              </div>
+              <div class="text-right shrink-0">
+                <span class="inline-block px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold text-xs tracking-wide border border-indigo-100">
+                  COTIZACIÓN <span id="doc-quote-number">COT-0001</span>
+                </span>
+                <p class="text-xs text-slate-500 mt-1">Fecha: <strong id="doc-quote-date" class="text-slate-700">--/--/----</strong></p>
+              </div>
+            </div>
+
+            <!-- Datos del Cliente + Muestra Visual Opcional -->
+            <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-100 flex items-center justify-between gap-3">
+              <div class="space-y-1">
+                <div>
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Preparado para</span>
+                  <strong id="doc-client-name" class="text-sm font-bold text-slate-800">Cliente General</strong>
+                </div>
+                <div>
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Servicio</span>
+                  <strong id="doc-service-label" class="text-xs font-bold text-indigo-700">Bordado Personalizado</strong>
+                </div>
+              </div>
+
+              <!-- Miniaturas de muestra de diseño si el usuario subió imágenes y activó mostrarlas -->
+              <div id="doc-samples-wrapper" class="flex items-center gap-2 hidden shrink-0">
+                <div id="doc-emb-sample-box" class="hidden text-center">
+                  <img id="doc-emb-sample-img" src="" alt="Muestra Bordado" class="w-14 h-14 object-contain rounded-lg bg-white border border-slate-200 p-1 shadow-2xs">
+                  <span class="block text-[9px] font-semibold text-slate-400 mt-0.5">Muestra Bordado</span>
+                </div>
+                <div id="doc-dtf-sample-box" class="hidden text-center">
+                  <img id="doc-dtf-sample-img" src="" alt="Muestra DTF" class="w-14 h-14 object-contain rounded-lg bg-white border border-slate-200 p-1 shadow-2xs">
+                  <span class="block text-[9px] font-semibold text-slate-400 mt-0.5">Arte DTF</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tabla de Detalle de Ítems -->
+            <div>
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="border-b-2 border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    <th class="py-2">Detalle / Prenda</th>
+                    <th class="py-2 text-center">Cant.</th>
+                    <th class="py-2 text-right">P. Unit.</th>
+                    <th class="py-2 text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody id="doc-items-tbody" class="divide-y divide-slate-100 text-xs">
+                  <!-- Se llena dinámicamente -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Totales del Cliente -->
+            <div class="border-t-2 border-slate-200 pt-3 space-y-1.5">
+              <div id="doc-net-row" class="hidden flex justify-between text-xs text-slate-600">
+                <span>Subtotal Neto:</span>
+                <strong id="doc-net-amount">$0</strong>
+              </div>
+              <div id="doc-iva-row" class="hidden flex justify-between text-xs text-slate-600">
+                <span>IVA (19%):</span>
+                <strong id="doc-iva-amount">$0</strong>
+              </div>
+              <div class="flex items-center justify-between pt-1">
+                <span class="text-sm font-extrabold text-slate-900">TOTAL COTIZACIÓN</span>
+                <span id="doc-final-total" class="text-xl font-black text-indigo-700">$0</span>
+              </div>
+            </div>
+
+            <!-- Condiciones / Pie de Página -->
+            <div class="pt-3 border-t border-slate-100 text-[11px] text-slate-400 leading-relaxed">
+              <p id="doc-terms">Cotización válida por 15 días. Valores expresados en Pesos Chilenos (CLP).</p>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ==========================================
+    // EXPORTAR PDF DIRECTO, IMAGEN PNG Y WHATSAPP
+    // ==========================================
+    function getSafeFileName(ext) {
+      const qNum = (document.getElementById('quote-number').value.trim() || 'COT-0001').replace(/[^a-zA-Z0-9-_]/g, '');
+      const rawClient = document.getElementById('quote-client').value.trim() || 'Cliente';
+      const safeClient = rawClient
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_|_$/g, '')
+        .slice(0, 28) || 'Cliente';
+      return `Cotizacion_${qNum}_${safeClient}.${ext}`;
+    }
+
+    async function downloadQuotePDF() {
+      const card = document.getElementById('client-quote-card');
+      const fileName = getSafeFileName('pdf');
+      showToast('Generando archivo PDF...', 'indigo');
+
+      if (typeof html2pdf === 'undefined') {
+        showToast('Librería PDF no disponible. Abriendo impresión...', 'rose');
+        window.print();
+        return;
+      }
+
+      // Guardamos estilos temporales para asegurar bordes limpios en el PDF
+      const prevShadow = card.style.boxShadow;
+      const prevBorder = card.style.border;
+      card.style.boxShadow = 'none';
+      card.style.border = '1px solid #e2e8f0';
+
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          allowTaint: true,
+          logging: false
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      try {
+        await html2pdf().set(opt).from(card).save();
+        showToast(`PDF descargado: ${fileName}`, 'emerald');
+      } catch (err) {
+        console.error('Error generando PDF:', err);
+        showToast('No se pudo descargar el PDF directamente. Intenta con Imagen PNG.', 'rose');
+      } finally {
+        card.style.boxShadow = prevShadow;
+        card.style.border = prevBorder;
+      }
+    }
+
+    async function downloadQuoteImage() {
+      const card = document.getElementById('client-quote-card');
+      const fileName = getSafeFileName('png');
+      showToast('Generando imagen de cotización...', 'indigo');
+
+      try {
+        const canvas = await html2canvas(card, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          allowTaint: true
+        });
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        showToast('Imagen descargada correctamente', 'emerald');
+      } catch (err) {
+        console.error(err);
+        showToast('No se pudo generar la imagen.', 'rose');
+      }
+    }
+
+    function formatQuoteCode(num) {
+      return `COT-${String(num).padStart(4, '0')}`;
+    }
+
+    // ==========================================
+    // UTILIDAD DE COMPRESIÓN DE IMÁGENES (MÓVIL/PC)
+    // ==========================================
+    function compressImageFile(file, maxSize = 360) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height && width > maxSize) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            } else if (height > maxSize) {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Mantener transparencia si es PNG/WebP
+            const outputType = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+            resolve(canvas.toDataURL(outputType, 0.85));
+          };
+          img.onerror = reject;
+          img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // ==========================================
+    // SUBIDA DE LOGO DE EMPRESA Y DISEÑOS
+    // ==========================================
+    async function handleWorkshopLogoUpload(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const dataUrl = await compressImageFile(file, 300);
+        workshopConfig.logo = dataUrl;
+        updateModalLogoPreview();
+        showToast('Logo cargado. Haz clic en "Guardar Datos" para fijarlo.', 'indigo');
+      } catch (err) {
+        showToast('No se pudo procesar la imagen del logo.', 'rose');
+      }
+    }
+
+    function removeWorkshopLogo() {
+      workshopConfig.logo = '';
+      document.getElementById('cfg-logo-input').value = '';
+      updateModalLogoPreview();
+    }
+
+    function updateModalLogoPreview() {
+      const preview = document.getElementById('cfg-logo-preview');
+      const placeholder = document.getElementById('cfg-logo-placeholder');
+      const removeBtn = document.getElementById('cfg-logo-remove');
+
+      if (workshopConfig.logo) {
+        preview.src = workshopConfig.logo;
+        preview.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+        removeBtn.classList.remove('hidden');
+      } else {
+        preview.src = '';
+        preview.classList.add('hidden');
+        placeholder.classList.remove('hidden');
+        removeBtn.classList.add('hidden');
+      }
+    }
+
+    async function handleDesignImageUpload(event, type) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const dataUrl = await compressImageFile(file, 320);
+        if (type === 'emb') {
+          embDesignDataUrl = dataUrl;
+          document.getElementById('emb-art-preview').src = dataUrl;
+          document.getElementById('emb-art-preview').classList.remove('hidden');
+          document.getElementById('emb-art-placeholder').classList.add('hidden');
+          document.getElementById('emb-art-remove').classList.remove('hidden');
+        } else {
+          dtfDesignDataUrl = dataUrl;
+          document.getElementById('dtf-art-preview').src = dataUrl;
+          document.getElementById('dtf-art-preview').classList.remove('hidden');
+          document.getElementById('dtf-art-placeholder').classList.add('hidden');
+          document.getElementById('dtf-art-remove').classList.remove('hidden');
+        }
+        updateAll();
+        showToast('Imagen cargada correctamente', 'emerald');
+      } catch (err) {
+        showToast('Error al cargar la imagen', 'rose');
+      }
+    }
+
+    function removeDesignImage(type) {
+      if (type === 'emb') {
+        embDesignDataUrl = '';
+        document.getElementById('emb-art-input').value = '';
+        document.getElementById('emb-art-preview').src = '';
+        document.getElementById('emb-art-preview').classList.add('hidden');
+        document.getElementById('emb-art-placeholder').classList.remove('hidden');
+        document.getElementById('emb-art-remove').classList.add('hidden');
+      } else {
+        dtfDesignDataUrl = '';
+        document.getElementById('dtf-art-input').value = '';
+        document.getElementById('dtf-art-preview').src = '';
+        document.getElementById('dtf-art-preview').classList.add('hidden');
+        document.getElementById('dtf-art-placeholder').classList.remove('hidden');
+        document.getElementById('dtf-art-remove').classList.add('hidden');
+      }
+      updateAll();
+    }
+
+    // ==========================================
+    // ACCIONES DE ENCABEZADO Y TALLER
+    // ==========================================
+    function startNewQuote() {
+      let currentNum = parseInt(localStorage.getItem('taller_quote_counter') || '1', 10);
+      currentNum += 1;
+      localStorage.setItem('taller_quote_counter', String(currentNum));
+
+      document.getElementById('quote-number').value = formatQuoteCode(currentNum);
+      document.getElementById('quote-client').value = '';
+      document.getElementById('quote-date').value = new Date().toISOString().split('T')[0];
+
+      garments = [{ id: Date.now(), subtitle: 'Prendas / Artículos', qty: 10, unitCost: 0 }];
+      renderGarments();
+      updateAll();
+      showToast(`Nueva cotización ${formatQuoteCode(currentNum)} lista`, 'indigo');
+    }
+
+    function saveDefaultMaterials() {
+      const fields = [
+        'emb-top-thread-price', 'emb-top-thread-meters',
+        'emb-bobbin-price', 'emb-bobbin-meters',
+        'emb-backing-price', 'emb-backing-width', 'emb-backing-length',
+        'emb-machine-hour-cost', 'emb-nfc-price',
+        'dtf-sheet-w', 'dtf-sheet-h', 'dtf-sheet-price',
+        'labor-rate'
+      ];
+      const data = {};
+      fields.forEach(id => {
+        data[id] = parseFloat(document.getElementById(id).value) || 0;
+      });
+      localStorage.setItem('taller_default_materials', JSON.stringify(data));
+      showToast('Precios base de insumos guardados en este dispositivo', 'emerald');
+    }
+
+    function toggleWorkshopModal(show) {
+      const modal = document.getElementById('workshop-modal');
+      if (show) {
+        document.getElementById('cfg-workshop-name').value = workshopConfig.name || '';
+        document.getElementById('cfg-workshop-rut').value = workshopConfig.rut || '';
+        document.getElementById('cfg-workshop-phone').value = workshopConfig.phone || '';
+        document.getElementById('cfg-workshop-social').value = workshopConfig.social || '';
+        document.getElementById('cfg-workshop-address').value = workshopConfig.address || '';
+        document.getElementById('cfg-workshop-terms').value = workshopConfig.terms || '';
+        updateModalLogoPreview();
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      } else {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    }
+
+    function saveWorkshopConfig() {
+      workshopConfig = {
+        ...workshopConfig,
+        name: document.getElementById('cfg-workshop-name').value.trim() || 'Taller Bordado & DTF',
+        rut: document.getElementById('cfg-workshop-rut').value.trim(),
+        phone: document.getElementById('cfg-workshop-phone').value.trim(),
+        social: document.getElementById('cfg-workshop-social').value.trim(),
+        address: document.getElementById('cfg-workshop-address').value.trim(),
+        terms: document.getElementById('cfg-workshop-terms').value.trim() || 'Cotización válida por 15 días.'
+      };
+      try {
+        localStorage.setItem('taller_workshop_cfg', JSON.stringify(workshopConfig));
+      } catch (e) {
+        showToast('El logo es muy pesado para guardarse permanente, pero se usará en esta sesión.', 'rose');
+      }
+      applyWorkshopConfigToUI();
+      toggleWorkshopModal(false);
+      updateAll();
+      showToast('Datos y logo del taller actualizados', 'emerald');
+    }
+
+    function applyWorkshopConfigToUI() {
+      // Header principal
+      document.getElementById('header-workshop-title').textContent = workshopConfig.name;
+      const headerLogoImg = document.getElementById('header-logo-img');
+      const headerLogoIcon = document.getElementById('header-logo-icon');
+
+      if (workshopConfig.logo) {
+        headerLogoImg.src = workshopConfig.logo;
+        headerLogoImg.classList.remove('hidden');
+        headerLogoIcon.classList.add('hidden');
+      } else {
+        headerLogoImg.classList.add('hidden');
+        headerLogoIcon.classList.remove('hidden');
+      }
+
+      // Documento cliente
+      const docLogo = document.getElementById('doc-workshop-logo');
+      if (workshopConfig.logo) {
+        docLogo.src = workshopConfig.logo;
+        docLogo.classList.remove('hidden');
+      } else {
+        docLogo.classList.add('hidden');
+      }
+
+      document.getElementById('doc-workshop-name').textContent = workshopConfig.name;
+
+      const rutEl = document.getElementById('doc-workshop-rut');
+      if (workshopConfig.rut) {
+        rutEl.textContent = `RUT: ${workshopConfig.rut}`;
+        rutEl.classList.remove('hidden');
+      } else {
+        rutEl.classList.add('hidden');
+      }
+
+      const contactParts = [workshopConfig.phone, workshopConfig.social].filter(Boolean);
+      document.getElementById('doc-workshop-contact').textContent = contactParts.join(' • ') || 'Personalización Textil';
+
+      const addrEl = document.getElementById('doc-workshop-address');
+      if (workshopConfig.address) {
+        addrEl.textContent = workshopConfig.address;
+        addrEl.classList.remove('hidden');
+      } else {
+        addrEl.classList.add('hidden');
+      }
+
+      document.getElementById('doc-terms').textContent = workshopConfig.terms;
+    }
+
+    // ==========================================
+    // GESTIÓN DE LÍNEAS DE PRENDAS (SUBTÍTULOS)
+    // ==========================================
+    function renderGarments() {
+      const container = document.getElementById('garments-list');
+      container.innerHTML = '';
+
+      garments.forEach((item, index) => {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end bg-slate-50 p-3 rounded-xl border border-slate-200/80';
+        row.innerHTML = `
+          <div class="sm:col-span-6">
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Subtítulo / Tipo de Prenda #${index + 1}</label>
+            <input type="text" value="${escapeHtml(item.subtitle)}" placeholder="Ej. Poleras Piqué / Gorras Trucker"
+              oninput="updateGarment(${item.id}, 'subtitle', this.value)"
+              class="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div class="col-span-5 sm:col-span-2">
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Cantidad</label>
+            <input type="number" value="${item.qty}" min="1"
+              oninput="updateGarment(${item.id}, 'qty', parseInt(this.value) || 0)"
+              class="w-full px-2.5 py-2 rounded-lg border border-slate-300 bg-white text-sm font-bold text-center focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div class="col-span-5 sm:col-span-3">
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Costo Prenda ($)</label>
+            <input type="number" value="${item.unitCost}" min="0" step="100"
+              oninput="updateGarment(${item.id}, 'unitCost', parseFloat(this.value) || 0)"
+              class="w-full px-2.5 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none">
+          </div>
+          <div class="col-span-2 sm:col-span-1 flex justify-end">
+            <button type="button" onclick="removeGarmentRow(${item.id})" ${garments.length === 1 ? 'disabled' : ''}
+              class="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 transition" title="Eliminar fila">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+      lucide.createIcons();
+    }
+
+    function addGarmentRow() {
+      garments.push({
+        id: Date.now(),
+        subtitle: `Prenda Línea ${garments.length + 1}`,
+        qty: 6,
+        unitCost: 0
+      });
+      renderGarments();
+      updateAll();
+    }
+
+    function removeGarmentRow(id) {
+      if (garments.length <= 1) return;
+      garments = garments.filter(g => g.id !== id);
+      renderGarments();
+      updateAll();
+    }
+
+    function updateGarment(id, field, value) {
+      const target = garments.find(g => g.id === id);
+      if (target) {
+        target[field] = value;
+        updateAll();
+      }
+    }
+
+    // ==========================================
+    // SELECTORES DE MODO DE SERVICIO Y BORDADO
+    // ==========================================
+    function setServiceMode(mode) {
+      serviceMode = mode;
+
+      const buttons = {
+        embroidery: document.getElementById('btn-mode-embroidery'),
+        dtf: document.getElementById('btn-mode-dtf'),
+        both: document.getElementById('btn-mode-both')
+      };
+
+      Object.keys(buttons).forEach(key => {
+        if (key === mode) {
+          buttons[key].className = 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition shadow-sm bg-white text-indigo-700';
+        } else {
+          buttons[key].className = 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition text-slate-600 hover:text-slate-900';
+        }
+      });
+
+      const embSec = document.getElementById('embroidery-section');
+      const dtfSec = document.getElementById('dtf-section');
+
+      embSec.classList.toggle('hidden', mode === 'dtf');
+      dtfSec.classList.toggle('hidden', mode === 'embroidery');
+
+      updateAll();
+    }
+
+    function setEmbroideryTarget(target) {
+      embroideryTarget = target;
+      const btnFlat = document.getElementById('emb-type-flat');
+      const btnCap = document.getElementById('emb-type-cap');
+      const hint = document.getElementById('emb-target-hint');
+
+      if (target === 'flat') {
+        btnFlat.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-sm flex items-center gap-1.5 transition';
+        btnCap.className = 'px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 flex items-center gap-1.5 transition';
+        hint.textContent = 'Modo Prenda Plana';
+        document.getElementById('emb-ppm').value = 750;
+        document.getElementById('emb-setup-min').value = 2;
+      } else {
+        btnCap.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-sm flex items-center gap-1.5 transition';
+        btnFlat.className = 'px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 flex items-center gap-1.5 transition';
+        hint.textContent = 'Modo Gorras (bastidor cilíndrico)';
+        document.getElementById('emb-ppm').value = 600;
+        document.getElementById('emb-setup-min').value = 3.5;
+      }
+      updateAll();
+    }
+
+    function toggleDtfPreview() {
+      dtfDiagramVisible = !dtfDiagramVisible;
+      const wrapper = document.getElementById('dtf-diagram-wrapper');
+      const btnText = document.getElementById('btn-toggle-dtf-text');
+
+      if (dtfDiagramVisible) {
+        wrapper.classList.remove('hidden');
+        btnText.textContent = 'Ocultar esquema de pliegos';
+        updateAll();
+      } else {
+        wrapper.classList.add('hidden');
+        btnText.textContent = 'Ver esquema de pliegos';
+      }
+    }
+
+    function syncProfitSlider(val) {
+      document.getElementById('profit-slider').value = Math.min(200, Math.max(0, val));
+      updateAll();
+    }
+
+    function syncProfitInput(val) {
+      document.getElementById('profit-percent').value = val;
+      updateAll();
+    }
+
+    // ==========================================
+    // MOTOR DE CÁLCULO PRINCIPAL
+    // ==========================================
+    function updateAll() {
+      // 1. Totales de Prendas
+      let totalUnits = 0;
+      let totalGarmentsCost = 0;
+
+      garments.forEach(g => {
+        const q = Math.max(0, Number(g.qty) || 0);
+        const c = Math.max(0, Number(g.unitCost) || 0);
+        totalUnits += q;
+        totalGarmentsCost += q * c;
+      });
+
+      document.getElementById('total-units-badge').textContent = `${totalUnits} unid.`;
+      document.getElementById('total-garments-cost-badge').textContent = clp.format(totalGarmentsCost);
+
+      let embTotalCost = 0;
+      let embExtrasCost = 0;
+      let embTotalHours = 0;
+
+      let dtfTotalCost = 0;
+      let dtfTotalHours = 0;
+
+      // 2. CÁLCULO BORDADO
+      if (serviceMode === 'embroidery' || serviceMode === 'both') {
+        const stitches = Math.max(0, parseFloat(document.getElementById('emb-stitches').value) || 0);
+        const ppm = Math.max(1, parseFloat(document.getElementById('emb-ppm').value) || 700);
+        const setupMin = Math.max(0, parseFloat(document.getElementById('emb-setup-min').value) || 0);
+        const machineHourCost = Math.max(0, parseFloat(document.getElementById('emb-machine-hour-cost').value) || 0);
+
+        const stitchMinPerUnit = stitches / ppm;
+        const totalMinPerUnit = stitchMinPerUnit + setupMin;
+        const totalBatchMinutes = totalMinPerUnit * totalUnits;
+        embTotalHours = totalBatchMinutes / 60;
+
+        document.getElementById('emb-time-unit').textContent = `${totalMinPerUnit.toFixed(1)} min`;
+        const hrs = Math.floor(totalBatchMinutes / 60);
+        const mins = Math.round(totalBatchMinutes % 60);
+        document.getElementById('emb-time-total').textContent = `${hrs} hrs ${mins} min`;
+
+        const topPrice = Math.max(0, parseFloat(document.getElementById('emb-top-thread-price').value) || 0);
+        const topMeters = Math.max(1, parseFloat(document.getElementById('emb-top-thread-meters').value) || 4000);
+        const topMetersNeeded = (stitches / 1000) * 5 * totalUnits;
+        const topThreadTotalCost = (topMetersNeeded / topMeters) * topPrice;
+        document.getElementById('emb-top-thread-cost').textContent = clp.format(topThreadTotalCost);
+
+        const bobPrice = Math.max(0, parseFloat(document.getElementById('emb-bobbin-price').value) || 0);
+        const bobMeters = Math.max(1, parseFloat(document.getElementById('emb-bobbin-meters').value) || 30000);
+        const bobMetersNeeded = (stitches / 1000) * 2.5 * totalUnits;
+        const bobThreadTotalCost = (bobMetersNeeded / bobMeters) * bobPrice;
+        document.getElementById('emb-bobbin-cost').textContent = clp.format(bobThreadTotalCost);
+
+        const backPrice = Math.max(0, parseFloat(document.getElementById('emb-backing-price').value) || 0);
+        const backRollW = Math.max(1, parseFloat(document.getElementById('emb-backing-width').value) || 100);
+        const backRollL_cm = Math.max(1, parseFloat(document.getElementById('emb-backing-length').value) || 50) * 100;
+        const cutW = Math.max(1, parseFloat(document.getElementById('emb-backing-cut-w').value) || 15);
+        const cutH = Math.max(1, parseFloat(document.getElementById('emb-backing-cut-h').value) || 15);
+
+        const totalRollAreaCm2 = backRollW * backRollL_cm;
+        const usedAreaCm2 = cutW * cutH * totalUnits;
+        const backingTotalCost = (usedAreaCm2 / totalRollAreaCm2) * backPrice;
+        document.getElementById('emb-backing-cost').textContent = clp.format(backingTotalCost);
+
+        const digitizingCost = Math.max(0, parseFloat(document.getElementById('emb-digitizing-cost').value) || 0);
+        const machineWearCost = embTotalHours * machineHourCost;
+
+        const nfcEnabled = document.getElementById('emb-nfc-enabled').checked;
+        const nfcUnit = nfcEnabled ? Math.max(0, parseFloat(document.getElementById('emb-nfc-price').value) || 0) : 0;
+        const otherExtraUnit = Math.max(0, parseFloat(document.getElementById('emb-other-extra').value) || 0);
+        embExtrasCost = (nfcUnit + otherExtraUnit) * totalUnits;
+
+        embTotalCost = topThreadTotalCost + bobThreadTotalCost + backingTotalCost + digitizingCost + machineWearCost;
+      }
+
+      // 3. CÁLCULO DTF MULTI-PLIEGO EN TIEMPO REAL
+      if (serviceMode === 'dtf' || serviceMode === 'both') {
+        const sheetW = Math.max(1, parseFloat(document.getElementById('dtf-sheet-w').value) || 58);
+        const sheetH = Math.max(1, parseFloat(document.getElementById('dtf-sheet-h').value) || 100);
+        const sheetPrice = Math.max(0, parseFloat(document.getElementById('dtf-sheet-price').value) || 0);
+
+        const logoW = Math.max(0.5, parseFloat(document.getElementById('dtf-logo-w').value) || 10);
+        const logoH = Math.max(0.5, parseFloat(document.getElementById('dtf-logo-h').value) || 10);
+        const gap = Math.max(0, parseFloat(document.getElementById('dtf-gap').value) || 0);
+        const allowRotate = document.getElementById('dtf-allow-rotate').checked;
+
+        const colsNormal = Math.floor((sheetW + gap) / (logoW + gap));
+        const rowsNormal = Math.floor((sheetH + gap) / (logoH + gap));
+        const countNormal = Math.max(0, colsNormal * rowsNormal);
+
+        const colsRotated = Math.floor((sheetW + gap) / (logoH + gap));
+        const rowsRotated = Math.floor((sheetH + gap) / (logoW + gap));
+        const countRotated = allowRotate ? Math.max(0, colsRotated * rowsRotated) : 0;
+
+        let bestCols = colsNormal;
+        let bestRows = rowsNormal;
+        let bestW = logoW;
+        let bestH = logoH;
+        let isRotated = false;
+
+        if (countRotated > countNormal) {
+          bestCols = colsRotated;
+          bestRows = rowsRotated;
+          bestW = logoH;
+          bestH = logoW;
+          isRotated = true;
+        }
+
+        const capacityPerSheet = Math.max(1, bestCols * bestRows);
+        const sheetsNeeded = totalUnits > 0 ? Math.ceil(totalUnits / capacityPerSheet) : 0;
+        const unitLogoCost = sheetPrice / capacityPerSheet;
+
+        document.getElementById('dtf-per-sheet').textContent = `${bestCols * bestRows} diseños (${bestCols}×${bestRows})`;
+        document.getElementById('dtf-orientation-tag').textContent = isRotated ? 'Rotado 90° (óptimo)' : 'Orientación normal';
+        document.getElementById('dtf-unit-logo-cost').textContent = clp.format(unitLogoCost);
+        document.getElementById('dtf-sheets-needed').textContent = sheetsNeeded;
+        document.getElementById('dtf-sheets-summary').textContent = `${sheetsNeeded} pliego(s)`;
+        document.getElementById('dtf-total-designs-label').textContent = totalUnits;
+        document.getElementById('dtf-dim-label').textContent = `${sheetW}×${sheetH} cm`;
+
+        // Renderizar esquema multi-pliego en vivo siempre que esté abierto
+        if (dtfDiagramVisible) {
+          renderMultiSheetDtfPreview({
+            sheetW,
+            sheetH,
+            cols: bestCols,
+            rows: bestRows,
+            itemW: bestW,
+            itemH: bestH,
+            gap,
+            totalUnits,
+            isRotated
+          });
+        }
+
+        // Tiempo de planchado
+        const pressSec = Math.max(0, parseFloat(document.getElementById('dtf-press-seconds').value) || 0);
+        const totalPressMin = (pressSec * totalUnits) / 60;
+        dtfTotalHours = totalPressMin / 60;
+        document.getElementById('dtf-press-total-time').textContent = `${Math.ceil(totalPressMin)} min (${dtfTotalHours.toFixed(2)} hrs)`;
+
+        const dtfDesignCost = Math.max(0, parseFloat(document.getElementById('dtf-design-cost').value) || 0);
+        dtfTotalCost = (sheetsNeeded * sheetPrice) + dtfDesignCost;
+      }
+
+      // 4. MANO DE OBRA Y ENVÍO
+      const totalProdHours = embTotalHours + dtfTotalHours;
+      document.getElementById('total-prod-hours').textContent = `${totalProdHours.toFixed(2)} hrs`;
+
+      const laborEnabled = document.getElementById('labor-enabled').checked;
+      const laborMode = document.getElementById('labor-mode').value;
+      const laborRate = Math.max(0, parseFloat(document.getElementById('labor-rate').value) || 0);
+
+      document.getElementById('labor-rate-label').textContent = laborMode === 'hourly' ? 'Valor Hora ($)' : 'Monto Fijo ($)';
+      document.getElementById('labor-inputs').classList.toggle('opacity-40', !laborEnabled);
+
+      let laborTotalCost = 0;
+      if (laborEnabled) {
+        laborTotalCost = laborMode === 'hourly' ? (totalProdHours * laborRate) : laborRate;
+      }
+      document.getElementById('labor-total-cost').textContent = clp.format(laborTotalCost);
+
+      const shippingEnabled = document.getElementById('shipping-enabled').checked;
+      const shippingCost = shippingEnabled ? Math.max(0, parseFloat(document.getElementById('shipping-cost').value) || 0) : 0;
+      document.getElementById('shipping-inputs').classList.toggle('opacity-40', !shippingEnabled);
+
+      // 5. RESUMEN FINANCIERO PRIVADO (SOLO TALLER)
+      const totalRealCost = totalGarmentsCost + embTotalCost + embExtrasCost + dtfTotalCost + laborTotalCost + shippingCost;
+      const profitPercent = Math.max(0, parseFloat(document.getElementById('profit-percent').value) || 0);
+
+      const operationalCost = totalRealCost - shippingCost;
+      const netProfit = operationalCost * (profitPercent / 100);
+      const clientNetTotal = Math.round(operationalCost + netProfit + shippingCost);
+
+      document.getElementById('priv-cost-garments').textContent = clp.format(totalGarmentsCost);
+      
+      document.getElementById('priv-row-emb').classList.toggle('hidden', serviceMode === 'dtf');
+      document.getElementById('priv-cost-emb').textContent = clp.format(embTotalCost);
+
+      document.getElementById('priv-row-dtf').classList.toggle('hidden', serviceMode === 'embroidery');
+      document.getElementById('priv-cost-dtf').textContent = clp.format(dtfTotalCost);
+
+      document.getElementById('priv-row-extras').classList.toggle('hidden', embExtrasCost === 0);
+      document.getElementById('priv-cost-extras').textContent = clp.format(embExtrasCost);
+
+      document.getElementById('priv-cost-labor-ship').textContent = clp.format(laborTotalCost + shippingCost);
+      document.getElementById('priv-total-cost').textContent = clp.format(totalRealCost);
+      document.getElementById('priv-net-profit').textContent = clp.format(netProfit);
+
+      // 6. ACTUALIZAR VISTA PREVIA DEL CLIENTE
+      renderClientPreview({
+        totalUnits,
+        totalGarmentsCost,
+        clientNetTotal,
+        shippingEnabled,
+        shippingCost
+      });
+    }
+
+    // ==========================================
+    // SIMULADOR VISUAL MULTI-PLIEGO DTF EN TIEMPO REAL
+    // ==========================================
+    function renderMultiSheetDtfPreview({ sheetW, sheetH, cols, rows, itemW, itemH, gap, totalUnits, isRotated }) {
+      const container = document.getElementById('dtf-multi-sheets-container');
+      const capacityPerSheet = Math.max(1, cols * rows);
+      const sheetsCount = totalUnits > 0 ? Math.ceil(totalUnits / capacityPerSheet) : 1;
+
+      document.getElementById('dtf-placed-count-info').textContent = `${totalUnits} diseño(s)`;
+      document.getElementById('dtf-sheets-count-info').textContent = `${sheetsCount} pliego(s)`;
+
+      container.innerHTML = '';
+
+      // Limitar renderizado máximo visual a 12 pliegos para mantener fluidez extrema en móvil si piden 500 unidades
+      const maxSheetsToRender = Math.min(sheetsCount, 12);
+      let remainingUnits = totalUnits;
+
+      for (let s = 0; s < maxSheetsToRender; s++) {
+        const unitsInThisSheet = totalUnits === 0
+          ? capacityPerSheet
+          : Math.min(capacityPerSheet, Math.max(0, remainingUnits));
+        remainingUnits = Math.max(0, remainingUnits - unitsInThisSheet);
+
+        const occupancyPct = Math.min(100, Math.round(((unitsInThisSheet * itemW * itemH) / (sheetW * sheetH)) * 100));
+
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-xl border border-slate-300 p-3 shadow-2xs flex flex-col gap-2';
+
+        // Cabecera de cada pliego
+        const header = document.createElement('div');
+        header.className = 'flex items-center justify-between text-[11px]';
+        header.innerHTML = `
+          <span class="font-extrabold text-slate-800">Pliego #${s + 1}</span>
+          <span class="px-2 py-0.5 rounded-md font-bold ${unitsInThisSheet === capacityPerSheet ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'}">
+            ${unitsInThisSheet} / ${capacityPerSheet} unid. (${occupancyPct}% área)
+          </span>
+        `;
+        card.appendChild(header);
+
+        // Contenedor proporcional del pliego
+        const sheetWrapper = document.createElement('div');
+        sheetWrapper.className = 'w-full flex justify-center bg-slate-100/70 p-2 rounded-lg border border-slate-200';
+
+        const sheetCanvas = document.createElement('div');
+        sheetCanvas.className = 'relative dtf-sheet-grid border-2 border-dashed border-slate-400 shadow-inner overflow-hidden';
+        sheetCanvas.style.aspectRatio = `${sheetW} / ${sheetH}`;
+        sheetCanvas.style.width = sheetW >= sheetH ? '100%' : '150px';
+        sheetCanvas.style.maxWidth = '210px';
+
+        // Dibujar cada celda ocupada en este pliego
+        for (let idx = 0; idx < unitsInThisSheet; idx++) {
+          const r = Math.floor(idx / cols);
+          const c = idx % cols;
+
+          const leftPct = ((c * (itemW + gap)) / sheetW) * 100;
+          const topPct = ((r * (itemH + gap)) / sheetH) * 100;
+          const widthPct = (itemW / sheetW) * 100;
+          const heightPct = (itemH / sheetH) * 100;
+
+          const cell = document.createElement('div');
+          cell.className = 'absolute border border-sky-600 bg-sky-500/15 flex items-center justify-center overflow-hidden rounded-[2px]';
+          cell.style.left = `${leftPct}%`;
+          cell.style.top = `${topPct}%`;
+          cell.style.width = `${widthPct}%`;
+          cell.style.height = `${heightPct}%`;
+
+          if (dtfDesignDataUrl) {
+            const img = document.createElement('img');
+            img.src = dtfDesignDataUrl;
+            img.className = 'w-full h-full object-contain p-[1px]';
+            if (isRotated) {
+              img.style.transform = 'rotate(90deg)';
+            }
+            cell.appendChild(img);
+          } else {
+            cell.innerHTML = `<span class="text-[7px] font-bold text-sky-900/80 leading-none select-none">${itemW}×${itemH}</span>`;
+          }
+
+          sheetCanvas.appendChild(cell);
+        }
+
+        sheetWrapper.appendChild(sheetCanvas);
+        card.appendChild(sheetWrapper);
+        container.appendChild(card);
+      }
+
+      if (sheetsCount > maxSheetsToRender) {
+        const extraNotice = document.createElement('div');
+        extraNotice.className = 'col-span-full text-center text-xs font-semibold text-slate-500 py-2 bg-white rounded-xl border border-slate-200';
+        extraNotice.textContent = `+ ${sheetsCount - maxSheetsToRender} pliego(s) adicional(es) calculados en el total.`;
+        container.appendChild(extraNotice);
+      }
+    }
+
+    // ==========================================
+    // RENDERIZADO DE LA COTIZACIÓN PARA EL CLIENTE
+    // ==========================================
+    function renderClientPreview({ totalUnits, totalGarmentsCost, clientNetTotal, shippingEnabled, shippingCost }) {
+      const qNum = document.getElementById('quote-number').value.trim() || 'COT-0001';
+      const qClient = document.getElementById('quote-client').value.trim() || 'Cliente General';
+      const qDateRaw = document.getElementById('quote-date').value;
+
+      document.getElementById('doc-quote-number').textContent = qNum;
+      document.getElementById('doc-client-name').textContent = qClient;
+
+      if (qDateRaw) {
+        const [y, m, d] = qDateRaw.split('-');
+        document.getElementById('doc-quote-date').textContent = `${d}/${m}/${y}`;
+      }
+
+      // Etiqueta del servicio
+      let serviceDesc = '';
+      if (serviceMode === 'embroidery') {
+        serviceDesc = embroideryTarget === 'cap' ? 'Bordado en Gorras' : 'Bordado Industrial en Prendas';
+      } else if (serviceMode === 'dtf') {
+        serviceDesc = 'Estampado DTF Alta Definición';
+      } else {
+        serviceDesc = 'Servicio Mixto: Bordado + Estampado DTF';
+      }
+      if (document.getElementById('emb-nfc-enabled').checked && serviceMode !== 'dtf') {
+        serviceDesc += ' + Tag NFC';
+      }
+      document.getElementById('doc-service-label').textContent = serviceDesc;
+
+      // Mostrar u ocultar muestras visuales de diseño en la tarjeta del cliente
+      const showEmbSample = embDesignDataUrl && document.getElementById('emb-show-in-quote').checked && serviceMode !== 'dtf';
+      const showDtfSample = dtfDesignDataUrl && document.getElementById('dtf-show-in-quote').checked && serviceMode !== 'embroidery';
+
+      const samplesWrapper = document.getElementById('doc-samples-wrapper');
+      const embSampleBox = document.getElementById('doc-emb-sample-box');
+      const dtfSampleBox = document.getElementById('doc-dtf-sample-box');
+
+      if (showEmbSample || showDtfSample) {
+        samplesWrapper.classList.remove('hidden');
+        if (showEmbSample) {
+          document.getElementById('doc-emb-sample-img').src = embDesignDataUrl;
+          embSampleBox.classList.remove('hidden');
+        } else {
+          embSampleBox.classList.add('hidden');
+        }
+
+        if (showDtfSample) {
+          document.getElementById('doc-dtf-sample-img').src = dtfDesignDataUrl;
+          dtfSampleBox.classList.remove('hidden');
+        } else {
+          dtfSampleBox.classList.add('hidden');
+        }
+      } else {
+        samplesWrapper.classList.add('hidden');
+      }
+
+      // Construir filas limpias para el cliente
+      const tbody = document.getElementById('doc-items-tbody');
+      tbody.innerHTML = '';
+
+      const servicePlusMarginTotal = Math.max(0, clientNetTotal - shippingCost);
+      const addedValuePerUnit = totalUnits > 0
+        ? Math.max(0, (servicePlusMarginTotal - totalGarmentsCost) / totalUnits)
+        : 0;
+
+      let accumulatedShown = 0;
+
+      garments.forEach((g, idx) => {
+        const qty = Math.max(0, Number(g.qty) || 0);
+        const baseUnit = Math.max(0, Number(g.unitCost) || 0);
+        if (qty === 0) return;
+
+        const sellUnitPrice = Math.round(baseUnit + addedValuePerUnit);
+        let rowSubtotal = sellUnitPrice * qty;
+
+        if (idx === garments.length - 1) {
+          rowSubtotal = Math.max(0, servicePlusMarginTotal - accumulatedShown);
+        }
+        accumulatedShown += rowSubtotal;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="py-2.5 pr-2">
+            <div class="font-bold text-slate-800">${escapeHtml(g.subtitle || 'Prenda Personalizada')}</div>
+            <div class="text-[11px] text-slate-500">${serviceDesc}</div>
+          </td>
+          <td class="py-2.5 text-center font-semibold text-slate-700">${qty}</td>
+          <td class="py-2.5 text-right text-slate-600">${clp.format(Math.round(rowSubtotal / qty))}</td>
+          <td class="py-2.5 text-right font-bold text-slate-900">${clp.format(rowSubtotal)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Fila de envío si está activa
+      if (shippingEnabled && shippingCost > 0) {
+        const trShip = document.createElement('tr');
+        trShip.innerHTML = `
+          <td class="py-2.5 pr-2">
+            <div class="font-semibold text-slate-700">Despacho / Envío a domicilio</div>
+          </td>
+          <td class="py-2.5 text-center text-slate-600">1</td>
+          <td class="py-2.5 text-right text-slate-600">${clp.format(shippingCost)}</td>
+          <td class="py-2.5 text-right font-bold text-slate-900">${clp.format(shippingCost)}</td>
+        `;
+        tbody.appendChild(trShip);
+      }
+
+      // Impuestos (IVA)
+      const taxMode = document.getElementById('tax-mode').value;
+      const netRow = document.getElementById('doc-net-row');
+      const ivaRow = document.getElementById('doc-iva-row');
+
+      if (taxMode === 'plus_iva') {
+        const ivaAmount = Math.round(clientNetTotal * 0.19);
+        const grossTotal = clientNetTotal + ivaAmount;
+
+        netRow.classList.remove('hidden');
+        ivaRow.classList.remove('hidden');
+        document.getElementById('doc-net-amount').textContent = clp.format(clientNetTotal);
+        document.getElementById('doc-iva-amount').textContent = clp.format(ivaAmount);
+        document.getElementById('doc-final-total').textContent = clp.format(grossTotal);
+      } else {
+        netRow.classList.add('hidden');
+        ivaRow.classList.add('hidden');
+        document.getElementById('doc-final-total').textContent = clp.format(clientNetTotal);
+      }
+    }
+
+    // ==========================================
+    // EXPORTAR IMAGEN PNG Y COPIAR WHATSAPP
+    // ==========================================
+    async function downloadQuoteImage() {
+      const card = document.getElementById('client-quote-card');
+      const qNum = document.getElementById('quote-number').value.trim() || 'COT-0001';
+      showToast('Generando imagen de cotización...', 'indigo');
+
+      try {
+        const canvas = await html2canvas(card, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true
+        });
+        const link = document.createElement('a');
+        link.download = `${qNum}_Cotizacion.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        showToast('Imagen descargada correctamente', 'emerald');
+      } catch (err) {
+        console.error(err);
+        showToast('No se pudo generar la imagen. Usa PDF / Imprimir.', 'rose');
+      }
+    }
+
+    function copyWhatsAppQuote() {
+      const qNum = document.getElementById('quote-number').value.trim();
+      const client = document.getElementById('quote-client').value.trim() || 'Cliente';
+      const service = document.getElementById('doc-service-label').textContent;
+      const total = document.getElementById('doc-final-total').textContent;
+
+      let lines = [
+        `*${workshopConfig.name.toUpperCase()}*`,
+        `📄 *Cotización:* ${qNum}`,
+        `👤 *Cliente:* ${client}`,
+        `🧵 *Servicio:* ${service}`,
+        `--------------------------------`,
+      ];
+
+      const rows = document.querySelectorAll('#doc-items-tbody tr');
+      rows.forEach(tr => {
+        const cols = tr.querySelectorAll('td');
+        if (cols.length === 4) {
+          const name = cols[0].querySelector('div').textContent.trim();
+          const qty = cols[1].textContent.trim();
+          const unit = cols[2].textContent.trim();
+          const sub = cols[3].textContent.trim();
+          lines.push(`• ${qty}x ${name} (${unit} c/u) = *${sub}*`);
+        }
+      });
+
+      lines.push(`--------------------------------`);
+      lines.push(`💰 *TOTAL:* ${total}`);
+      lines.push(`_${workshopConfig.terms}_`);
+
+      const text = lines.join('\n');
+
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+
+      showToast('Resumen copiado listo para pegar en WhatsApp', 'emerald');
+    }
+
+    // ==========================================
+    // UTILIDADES UI
+    // ==========================================
+    function showToast(message, color = 'indigo') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const bgMap = {
+        indigo: 'bg-indigo-600',
+        emerald: 'bg-emerald-600',
+        rose: 'bg-rose-600'
+      };
+      toast.className = `${bgMap[color] || 'bg-slate-800'} text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 transition-all duration-300`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 2800);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // ==========================================
+    // CONFIGURACIÓN PWA (MANIFEST + SERVICE WORKER)
+    // ==========================================
+    let deferredPwaPrompt = null;
+
+    function createPwaIconSvgDataUrl() {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+        <rect width="192" height="192" rx="38" fill="#0f172a"/>
+        <circle cx="96" cy="96" r="62" fill="#4f46e5"/>
+        <path d="M66 66 L126 126 M126 66 L66 126" stroke="#ffffff" stroke-width="14" stroke-linecap="round"/>
+      </svg>`;
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    }
+
+    function setupPwaManifestAndWorker() {
+      try {
+        const iconUrl = createPwaIconSvgDataUrl();
+        const manifestObj = {
+          name: 'Cotizador Taller Bordado & DTF',
+          short_name: 'Cotizador DTF/Bordado',
+          description: 'Calculadora de costos y cotizaciones para bordado industrial y estampado DTF.',
+          start_url: './',
+          display: 'standalone',
+          background_color: '#f1f5f9',
+          theme_color: '#0f172a',
+          icons: [
+            {
+              src: iconUrl,
+              sizes: '192x192',
+              type: 'image/svg+xml',
+              purpose: 'any maskable'
+            }
+          ]
+        };
+
+        const manifestBlob = new Blob([JSON.stringify(manifestObj)], { type: 'application/manifest+json' });
+        const manifestUrl = URL.createObjectURL(manifestBlob);
+        const manifestEl = document.getElementById('pwa-manifest-link');
+        if (manifestEl) {
+          manifestEl.setAttribute('href', manifestUrl);
+        }
+
+        if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
+          const swCode = `
+            const CACHE_NAME = 'cotizador-taller-pwa-v1';
+            self.addEventListener('install', (event) => {
+              self.skipWaiting();
+              event.waitUntil(
+                caches.open(CACHE_NAME).then((cache) => cache.addAll(['./']).catch(() => {}))
+              );
+            });
+            self.addEventListener('activate', (event) => {
+              event.waitUntil(self.clients.claim());
+            });
+            self.addEventListener('fetch', (event) => {
+              if (event.request.method !== 'GET') return;
+              event.respondWith(
+                fetch(event.request).catch(() => caches.match(event.request))
+              );
+            });
+          `;
+          const swBlob = new Blob([swCode], { type: 'application/javascript' });
+          const swUrl = URL.createObjectURL(swBlob);
+          navigator.serviceWorker.register(swUrl).catch((err) => {
+            console.warn('Service Worker no registrado:', err);
+          });
+        }
+      } catch (e) {
+        console.warn('Error configurando PWA:', e);
+      }
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPwaPrompt = e;
+      const btn = document.getElementById('btn-install-pwa');
+      if (btn) btn.classList.remove('hidden');
+    });
+
+    async function installPwaApp() {
+      if (!deferredPwaPrompt) {
+        showToast('Usa el menú de Chrome (⋮) → "Instalar aplicación" o "Agregar a pantalla principal".', 'indigo');
+        return;
+      }
+      deferredPwaPrompt.prompt();
+      const { outcome } = await deferredPwaPrompt.userChoice;
+      deferredPwaPrompt = null;
+      const btn = document.getElementById('btn-install-pwa');
+      if (btn) btn.classList.add('hidden');
+      if (outcome === 'accepted') {
+        showToast('Aplicación instalada en tu dispositivo', 'emerald');
+      }
+    }
+
+    setupPwaManifestAndWorker();
+  </script>
+</body>
+</html>
